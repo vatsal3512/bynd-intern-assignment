@@ -84,6 +84,6 @@ The generator is designed as a decoupled, multi-stage pipeline to isolate struct
 
 ### 3. Synthesis & Fact-Grounding Engine (`src/generator.py`)
 
-**Mechanism:** Integrated with `claude-3-5-sonnet-latest` running at a hard deterministic `temperature=0.0`.
+**Mechanism:** Integrated with `claude-sonnet-4-5-20250929` running at a hard deterministic `temperature=0.0`.
 
 **Design Choice:** Claude Sonnet offers top-tier compliance when responding to complex text injection and strict systemic constraints. Setting the temperature to absolute zero forces the engine to act strictly as a data compiler rather than an imaginative language generator, drastically cutting down on potential hallucinations.
