@@ -1,0 +1,6 @@
+anthropic
+yfinance
+pandas
+tabulate
+requests
+beautifulsoup4
