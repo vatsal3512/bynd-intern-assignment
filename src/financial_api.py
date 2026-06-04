@@ -1,36 +1,93 @@
 import yfinance as yf
 import pandas as pd
 
+KEY_METRICS = [
+    "Total Revenue",
+    "Gross Profit",
+    "Operating Income",
+    "EBITDA",
+    "EBIT",
+    "Net Income",
+    "Diluted EPS",
+    "Interest Expense",
+    "Tax Provision",
+    "Normalized EBITDA",
+]
+
+EPS_METRICS = ["Diluted EPS", "Basic EPS"]
+
 def fetch_financial_data(ticker_symbol: str) -> str:
     """
-    Fetches multi-year financial figures (Income Statement) using Yahoo Finance.
-    If the company is unlisted or data is missing, returns an honest fallback string.
+    Fetches key income statement metrics from Yahoo Finance.
+    Automatically detects currency and scales to the most readable unit.
+    EPS is kept in raw currency units, all other metrics scaled to Crores/Millions.
     """
     if not ticker_symbol:
-        return "CRITICAL: No public stock ticker provided. Financial data is unavailable via public market registries."
-        
+        return "NULL: No ticker provided. Company is likely private or unlisted."
+
     try:
-        # Fetch data using the yfinance ticker
         company = yf.Ticker(ticker_symbol)
-        financials = company.financials  # This pulls the annual income statement
-        
+        financials = company.financials
+
         if financials is None or financials.empty:
-            return f"NOTICE: Public financial registry entries for ticker '{ticker_symbol}' returned empty datasets."
-        
-        # We slice the last 4 years of data if available to match the GPIL sample format
+            return f"NULL: Yahoo Finance returned empty data for ticker '{ticker_symbol}'."
+
+        # Detect currency automatically
+        info = company.fast_info
+        currency = getattr(info, "currency", "INR")
+
+        currency_symbols = {
+            "INR": "₹",
+            "USD": "$",
+            "EUR": "€",
+            "GBP": "£",
+        }
+        currency_symbol = currency_symbols.get(currency, currency)
+
+        # Get last 4 years
         available_years = financials.iloc[:, :4]
-        
-        # Convert the Pandas DataFrame to a clean Markdown table for the LLM to read perfectly
-        markdown_table = available_years.to_markdown()
-        return markdown_table
+
+        # Filter to key metrics only
+        filtered = available_years[
+            available_years.index.isin(KEY_METRICS)
+        ]
+        filtered = filtered.reindex(
+            [m for m in KEY_METRICS if m in filtered.index]
+        )
+
+        # Separate EPS rows from the rest — EPS must not be scaled
+        eps_data = filtered[filtered.index.isin(EPS_METRICS)].round(2)
+        non_eps_data = filtered[~filtered.index.isin(EPS_METRICS)]
+
+        # Scale non-EPS rows based on currency
+        if currency == "INR":
+            scaled_non_eps = (non_eps_data / 1e7).round(2)
+            unit_label = f"{currency_symbol} Crores"
+        else:
+            scaled_non_eps = (non_eps_data / 1e6).round(2)
+            unit_label = f"{currency_symbol} Millions"
+
+        scaled = pd.concat([scaled_non_eps, eps_data])
+        scaled = scaled.reindex([m for m in KEY_METRICS if m in scaled.index])
+
+        markdown_table = scaled.to_markdown()
+
+        return (
+            f"Source: Yahoo Finance API | Ticker: {ticker_symbol} | "
+            f"Currency: {currency} | Unit: {unit_label}\n"
+            f"Note: EPS figures are in {currency_symbol} per share (not scaled)\n\n"
+            f"All figures in {unit_label} unless noted\n\n"
+            f"{markdown_table}"
+        )
 
     except Exception as e:
-        return f"ERROR: Failed to retrieve data from financial registry API. Reason: {str(e)}"
+        return f"ERROR: Could not fetch financial data for '{ticker_symbol}'. Reason: {str(e)}"
 
-# Quick sandbox test to verify it works locally
+
+# Quick test
 if __name__ == "__main__":
-    print("Testing Data-Rich Company (Bharat Forge)...")
-    print(fetch_financial_data("BHARATFORG.NS"))  # .NS is the Yahoo suffix for the National Stock Exchange of India
-    
-    print("\nTesting Data-Sparse Company (Brakes India)...")
-    print(fetch_financial_data(""))  # Passing empty string because Brakes India is unlisted
+    print("Testing Bharat Forge...")
+    print(fetch_financial_data("BHARATFORG.NS"))
+
+    print("\nTesting private company fallback...")
+    print(fetch_financial_data(""))
